@@ -1,0 +1,207 @@
+<template>
+  <div class="max-w-4xl space-y-6">
+    <!-- Breadcrumb -->
+    <Breadcrumb>
+      <BreadcrumbList>
+        <BreadcrumbItem>
+          <BreadcrumbLink as-child>
+            <RouterLink to="/templates">Templates</RouterLink>
+          </BreadcrumbLink>
+        </BreadcrumbItem>
+        <BreadcrumbSeparator />
+        <BreadcrumbItem>
+          <BreadcrumbPage>{{ template?.name ?? 'Loading…' }}</BreadcrumbPage>
+        </BreadcrumbItem>
+      </BreadcrumbList>
+    </Breadcrumb>
+
+    <!-- Not found -->
+    <div v-if="!template" class="flex flex-col items-center justify-center py-20 text-center">
+      <p class="text-muted-foreground mb-4">Template not found</p>
+      <Button variant="outline" @click="router.push('/templates')">← Back to Templates</Button>
+    </div>
+
+    <template v-else>
+      <!-- Header -->
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-xl font-semibold">{{ template.name }}</h1>
+          <p v-if="template.description" class="text-sm text-muted-foreground mt-0.5">
+            {{ template.description }}
+          </p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <!-- Primary CTA: create new version based on active/latest -->
+          <Button size="sm" :disabled="!versions.length" @click="updateVersion">
+            Update Version
+          </Button>
+          <!-- Secondary: edit template metadata -->
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="icon" class="size-8">
+                <MoreHorizontal class="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-44">
+              <DropdownMenuItem @click="openEditDialog">
+                <Pencil class="size-4 mr-2" /> Edit Template
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" size="sm" @click="router.push('/templates')">
+            ← Back
+          </Button>
+        </div>
+      </div>
+
+      <!-- Versions table -->
+      <div class="space-y-2">
+        <h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Versions</h2>
+        <Card v-if="versions.length">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead class="w-28">Version</TableHead>
+                <TableHead class="w-28">Status</TableHead>
+                <TableHead class="w-20 text-center">Fields</TableHead>
+                <TableHead class="w-36">Created</TableHead>
+                <TableHead class="w-16 text-center">View</TableHead>
+                <TableHead class="w-28 text-center">Active</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="ver in versions" :key="ver.id">
+                <TableCell class="font-mono text-sm font-medium">{{ ver.version }}</TableCell>
+                <TableCell><VersionBadge :status="ver.status" /></TableCell>
+                <TableCell class="text-center text-sm">{{ ver.fields.length }}</TableCell>
+                <TableCell class="text-sm text-muted-foreground">{{ formatDate(ver.createdAt) }}</TableCell>
+                <TableCell class="text-center">
+                  <Button variant="ghost" size="icon" class="size-8" @click="viewVersion(ver.id)">
+                    <Eye class="size-4" />
+                  </Button>
+                </TableCell>
+                <TableCell class="text-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    :disabled="ver.status === 'active'"
+                    class="text-xs gap-1.5"
+                    @click="handleActivate(ver.id)"
+                  >
+                    <CheckCircle2 class="size-3.5" />
+                    {{ ver.status === 'active' ? 'Active ✓' : 'Set Active' }}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </Card>
+
+        <div v-else class="flex flex-col items-center justify-center py-12 text-center">
+          <p class="text-sm text-muted-foreground">No versions yet</p>
+        </div>
+      </div>
+    </template>
+
+    <!-- Edit template metadata dialog -->
+    <Dialog v-model:open="editDialogOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Template</DialogTitle>
+        </DialogHeader>
+        <div class="space-y-4 py-2">
+          <div class="space-y-1.5">
+            <Label>Name <span class="text-destructive">*</span></Label>
+            <Input v-model="editForm.name" placeholder="Template name" />
+          </div>
+          <div class="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea v-model="editForm.description" placeholder="Optional description" :rows="3" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="editDialogOpen = false">Cancel</Button>
+          <Button :disabled="!editForm.name.trim()" @click="saveEdit">Save changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { toast } from 'vue-sonner'
+import { Pencil, MoreHorizontal, Eye, CheckCircle2 } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Breadcrumb, BreadcrumbItem, BreadcrumbLink,
+  BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator
+} from '@/components/ui/breadcrumb'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
+import VersionBadge from '@/components/common/version-badge.vue'
+import * as templateService from '@/services/template.service'
+import type { Template, TemplateVersion } from '@/types/template.types'
+
+const route   = useRoute()
+const router  = useRouter()
+
+const template       = ref<Template | undefined>()
+const versions       = ref<TemplateVersion[]>([])
+const editDialogOpen = ref(false)
+const editForm       = ref({ name: '', description: '' })
+
+function load(): void {
+  const id = route.params.id as string
+  template.value = templateService.getTemplate(id)
+  versions.value = templateService.getVersionsByTemplate(id)
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString()
+}
+
+/** Navigate to annotation canvas to create a new version based on active (or latest) version */
+function updateVersion(): void {
+  const baseId = template.value?.activeVersionId ?? versions.value[0]?.id
+  if (!baseId) return
+  router.push(`/templates/create?from=${baseId}&templateId=${route.params.id}`)
+}
+
+function openEditDialog(): void {
+  if (!template.value) return
+  editForm.value = { name: template.value.name, description: template.value.description ?? '' }
+  editDialogOpen.value = true
+}
+
+function saveEdit(): void {
+  if (!template.value) return
+  templateService.updateTemplate(template.value.id, {
+    name: editForm.value.name.trim(),
+    description: editForm.value.description.trim() || undefined
+  })
+  editDialogOpen.value = false
+  toast.success('Template updated')
+  load()
+}
+
+function handleActivate(versionId: string): void {
+  templateService.activateVersion(versionId)
+  toast.success('Version activated')
+  load()
+}
+
+function viewVersion(versionId: string): void {
+  router.push(`/templates/${route.params.id}/versions/${versionId}`)
+}
+
+onMounted(load)
+</script>
