@@ -1,10 +1,10 @@
 <template>
-  <div class="max-w-4xl space-y-6">
+  <div class="w-full space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-xl font-semibold">Templates</h1>
-        <p class="text-sm text-muted-foreground mt-0.5">Manage your OCR document templates</p>
+        <h1 class="text-xl font-bold text-foreground">Templates</h1>
+        <p class="text-sm text-primary/50 mt-0.5">Manage your OCR document templates</p>
       </div>
       <Button @click="router.push('/templates/create')">
         <Plus class="size-4 mr-1.5" /> New Template
@@ -19,7 +19,7 @@
 
     <!-- Table -->
     <template v-else-if="rows.length">
-      <Card>
+      <Card class="table-card">
         <Table>
           <TableHeader>
             <TableRow>

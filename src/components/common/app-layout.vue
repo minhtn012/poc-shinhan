@@ -59,12 +59,12 @@
     <!-- Main content -->
     <SidebarInset class="h-screen overflow-hidden">
       <!-- Top bar with trigger -->
-      <header class="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <SidebarTrigger class="-ml-1" />
-        <Separator orientation="vertical" class="h-4" />
+      <header class="flex h-14 shrink-0 items-center gap-2 border-b border-primary/10 px-6 bg-white/80 backdrop-blur-sm">
+        <SidebarTrigger class="-ml-1 text-primary/60 hover:text-primary transition-colors" />
+        <Separator orientation="vertical" class="h-4 bg-primary/15" />
       </header>
 
-      <div class="flex-1 overflow-y-auto bg-muted/30 p-6">
+      <div class="flex-1 overflow-y-auto content-area p-6">
         <router-view />
       </div>
     </SidebarInset>

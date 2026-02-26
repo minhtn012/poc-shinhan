@@ -1,10 +1,10 @@
 <template>
-  <div class="max-w-4xl space-y-6">
+  <div class="w-full space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-xl font-semibold">OCR Jobs</h1>
-        <p class="text-sm text-muted-foreground mt-0.5">Document processing history</p>
+        <h1 class="text-xl font-bold text-foreground">OCR Jobs</h1>
+        <p class="text-sm text-primary/50 mt-0.5">Document processing history</p>
       </div>
       <Button @click="router.push('/ocr/new')">
         <Plus class="size-4 mr-1.5" /> New Job
@@ -19,7 +19,7 @@
 
     <!-- Table -->
     <template v-else-if="jobs.length">
-      <Card>
+      <Card class="table-card">
         <Table>
           <TableHeader>
             <TableRow>

@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-4xl space-y-6">
+  <div class="w-full space-y-6">
     <!-- Breadcrumb -->
     <Breadcrumb>
       <BreadcrumbList>
@@ -25,7 +25,7 @@
       <!-- Header -->
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-xl font-semibold">{{ template.name }}</h1>
+          <h1 class="text-xl font-bold text-foreground">{{ template.name }}</h1>
           <p v-if="template.description" class="text-sm text-muted-foreground mt-0.5">
             {{ template.description }}
           </p>
@@ -57,15 +57,15 @@
       <!-- Versions table -->
       <div class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Versions</h2>
-        <Card v-if="versions.length">
+        <Card v-if="versions.length" class="table-card">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead class="w-28">Version</TableHead>
-                <TableHead class="w-28">Status</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead class="w-24">Status</TableHead>
                 <TableHead class="w-20 text-center">Fields</TableHead>
-                <TableHead class="w-36">Created</TableHead>
-                <TableHead class="w-16 text-center">View</TableHead>
+                <TableHead class="w-32">Created</TableHead>
+                <TableHead class="w-20 text-center">View</TableHead>
                 <TableHead class="w-28 text-center">Active</TableHead>
               </TableRow>
             </TableHeader>

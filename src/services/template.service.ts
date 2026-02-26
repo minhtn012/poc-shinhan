@@ -143,3 +143,11 @@ export function activateVersion(versionId: string): void {
     writeList(TEMPLATES_KEY, templates)
   }
 }
+
+export function updateVersionFields(versionId: string, fields: TemplateField[]): void {
+  const allVersions = readList<TemplateVersion>(VERSIONS_KEY)
+  const target = allVersions.find(v => v.id === versionId)
+  if (!target) return
+  target.fields = fields
+  writeList(VERSIONS_KEY, allVersions)
+}

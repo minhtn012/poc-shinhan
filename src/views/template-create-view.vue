@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-5xl space-y-6">
+  <div class="w-full space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-semibold">
@@ -9,7 +9,7 @@
     </div>
 
     <!-- Step indicator -->
-    <div class="flex items-center gap-0">
+    <div class="flex items-center justify-center gap-0">
       <div v-for="(step, i) in steps" :key="i" class="flex items-center">
         <div class="flex items-center gap-2">
           <div :class="[
@@ -38,7 +38,7 @@
     </div>
 
     <!-- ── Step 1: Info + Image ── -->
-    <Card v-if="activeStep === 0" class="max-w-lg">
+    <Card v-if="activeStep === 0" class="max-w-xl mx-auto">
       <CardContent class="pt-6 space-y-4">
         <div class="space-y-1.5">
           <Label>Template Name <span class="text-destructive">*</span></Label>
@@ -119,8 +119,8 @@
     </div>
 
     <!-- ── Step 3: Review + Save ── -->
-    <div v-if="activeStep === 2" class="space-y-4 max-w-2xl">
-      <Card>
+    <div v-if="activeStep === 2" class="space-y-4 max-w-3xl mx-auto">
+      <Card class="table-card">
         <CardContent class="pt-5">
           <div class="flex items-baseline gap-2 mb-4">
             <h2 class="text-base font-semibold">{{ templateName }}</h2>
@@ -149,7 +149,7 @@
         </CardContent>
       </Card>
 
-      <div class="flex gap-3">
+      <div class="flex justify-center gap-3">
         <Button variant="outline" @click="activeStep = 1">← Back</Button>
         <Button :disabled="saving" @click="saveTemplate">
           <LoaderCircle v-if="saving" class="size-4 mr-2 animate-spin" />

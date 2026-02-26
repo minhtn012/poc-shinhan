@@ -139,12 +139,13 @@ watch(
 )
 
 // Reinit canvas when imageUrl changes
+// flush: 'post' ensures containerRef is available after DOM mount
 watch(
   () => props.imageUrl,
   async (url) => {
     if (url) await initCanvas(url)
   },
-  { immediate: true }
+  { immediate: true, flush: 'post' }
 )
 
 onUnmounted(() => {

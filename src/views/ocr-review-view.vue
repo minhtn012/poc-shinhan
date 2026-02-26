@@ -34,9 +34,9 @@
     </div>
 
     <!-- Split panel: image | results -->
-    <div v-else class="flex flex-1 min-h-0 rounded-lg border overflow-hidden">
+    <div v-else class="flex flex-1 min-h-0 rounded-lg border border-black/[0.06] overflow-hidden">
       <!-- Left: document image -->
-      <div class="flex-[55] relative border-r">
+      <div class="flex-[55] relative border-r border-black/[0.04]">
         <div v-if="imageLoading" class="flex items-center justify-center h-full bg-muted">
           <Loader2 class="size-8 animate-spin text-muted-foreground" />
         </div>
