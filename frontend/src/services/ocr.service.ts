@@ -1,80 +1,45 @@
-import type { OcrJob, OcrJobStatus, OcrFieldResult } from '@/types/ocr.types'
+import apiClient from '@/lib/api-client'
+import type { OcrJob, OcrFieldResult } from '@/types/ocr.types'
 
-const JOBS_KEY = 'ocr:jobs'
-
-function readList<T>(key: string): T[] {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? '[]') as T[]
-  } catch {
-    return []
-  }
-}
-
-function writeList<T>(key: string, data: T[]): void {
-  localStorage.setItem(key, JSON.stringify(data))
-}
-
-export function getJobs(): OcrJob[] {
-  return readList<OcrJob>(JOBS_KEY)
-}
-
-export function getJob(id: string): OcrJob | undefined {
-  return getJobs().find(j => j.id === id)
-}
-
-export function createJob(params: {
-  templateVersionId: string
+interface PreprocessResult {
+  templateId: string
   templateName: string
-  imageKey: string
-  processedImageUrl?: string
-}): OcrJob {
-  const job: OcrJob = {
-    id: crypto.randomUUID(),
-    templateVersionId: params.templateVersionId,
-    templateName: params.templateName,
-    imageKey: params.imageKey,
-    processedImageUrl: params.processedImageUrl,
-    status: 'pending',
-    results: [],
-    createdAt: new Date().toISOString()
-  }
-  const jobs = getJobs()
-  jobs.push(job)
-  writeList(JOBS_KEY, jobs)
-  return job
+  confidence: number
 }
 
-export function updateJobStatus(id: string, status: OcrJobStatus): void {
-  const jobs = getJobs()
-  const job = jobs.find(j => j.id === id)
-  if (job) {
-    job.status = status
-    writeList(JOBS_KEY, jobs)
-  }
-}
+export const ocrService = {
+  preprocess: (imageFile: File) => {
+    const form = new FormData()
+    form.append('image', imageFile)
+    return apiClient.post<PreprocessResult | null>('/ocr/preprocess', form).then(r => r.data)
+  },
 
-export function updateJobResults(id: string, results: OcrFieldResult[]): void {
-  const jobs = getJobs()
-  const job = jobs.find(j => j.id === id)
-  if (job) {
-    job.results = results
-    writeList(JOBS_KEY, jobs)
-  }
-}
+  extract: (templateVersionId: string, imageFile: File) => {
+    const form = new FormData()
+    form.append('image', imageFile)
+    form.append('templateVersionId', templateVersionId)
+    return apiClient.post<OcrJob>('/ocr/extract', form).then(r => r.data)
+  },
 
-export function updateFieldValue(jobId: string, fieldId: string, value: string): void {
-  const jobs = getJobs()
-  const job = jobs.find(j => j.id === jobId)
-  if (!job) return
-  const field = job.results.find(r => r.fieldId === fieldId)
-  if (field) {
-    field.value = value
-    field.edited = true
-    writeList(JOBS_KEY, jobs)
-  }
-}
+  list: () =>
+    apiClient.get<OcrJob[]>('/ocr/jobs').then(r => r.data),
 
-export function deleteJob(id: string): void {
-  const jobs = getJobs().filter(j => j.id !== id)
-  writeList(JOBS_KEY, jobs)
+  get: (id: string) =>
+    apiClient.get<OcrJob>(`/ocr/jobs/${id}`).then(r => r.data),
+
+  updateField: (jobId: string, fieldId: string, value: string) =>
+    apiClient.patch<OcrFieldResult>(`/ocr/jobs/${jobId}/fields/${fieldId}`, { value }).then(r => r.data),
+
+  extractBundle: (bundleId: string, files: File[]) => {
+    const form = new FormData()
+    form.append('bundleId', bundleId)
+    files.forEach(f => form.append('images', f))
+    return apiClient.post<OcrJob[]>('/ocr/extract-bundle', form).then(r => r.data)
+  },
+
+  listBundleJobs: (bundleId: string) =>
+    apiClient.get<OcrJob[]>(`/ocr/jobs/bundle/${bundleId}`).then(r => r.data),
+
+  delete: (id: string) =>
+    apiClient.delete(`/ocr/jobs/${id}`),
 }

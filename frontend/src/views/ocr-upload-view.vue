@@ -22,54 +22,69 @@
     </Alert>
 
     <!-- ── Upload stage ── -->
-    <Card v-if="stage === 'upload'">
-      <CardContent class="pt-6 space-y-5">
-        <!-- Drop zone -->
-        <div
-          :class="[
-            'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center cursor-pointer transition-colors',
-            !hasTemplates ? 'pointer-events-none opacity-50' : '',
-            isDragging
-              ? 'border-primary bg-primary/5'
-              : file
-                ? 'border-emerald-400 bg-emerald-50'
-                : 'border-border hover:border-primary/60 hover:bg-muted/40'
-          ]"
-          @click="fileInput?.click()"
-          @dragover.prevent="isDragging = true"
-          @dragleave.prevent="isDragging = false"
-          @drop.prevent="onDrop"
-        >
-          <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileInput" />
-          <template v-if="file">
-            <ImageIcon class="size-10 text-emerald-500 mb-3" />
-            <p class="text-sm font-semibold text-emerald-700">{{ file.name }}</p>
-            <p class="text-xs text-muted-foreground mt-1">Click to replace</p>
-          </template>
-          <template v-else>
-            <Upload class="size-10 text-muted-foreground mb-3" />
-            <p class="text-sm font-semibold">Drop document image here</p>
-            <p class="text-sm text-muted-foreground">or <span class="text-primary">click to browse</span></p>
-            <p class="text-xs text-muted-foreground mt-2">JPG, PNG, WEBP, TIFF supported</p>
-          </template>
-        </div>
+    <Tabs v-if="stage === 'upload'" v-model="mode" class="w-full">
+      <TabsList class="grid w-full grid-cols-2">
+        <TabsTrigger value="single">Single File</TabsTrigger>
+        <TabsTrigger value="bundle">Bundle</TabsTrigger>
+      </TabsList>
 
-        <Button
-          class="w-full"
-          size="lg"
-          :disabled="!file || !hasTemplates"
-          @click="startProcessing"
-        >
-          <ScanText class="size-4 mr-2" />
-          Start OCR Processing
-        </Button>
-      </CardContent>
-    </Card>
+      <TabsContent value="single">
+        <Card>
+          <CardContent class="pt-6 space-y-5">
+            <div
+              :class="[
+                'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center cursor-pointer transition-colors',
+                !hasTemplates ? 'pointer-events-none opacity-50' : '',
+                isDragging
+                  ? 'border-primary bg-primary/5'
+                  : file
+                    ? 'border-emerald-400 bg-emerald-50'
+                    : 'border-border hover:border-primary/60 hover:bg-muted/40'
+              ]"
+              @click="fileInput?.click()"
+              @dragover.prevent="isDragging = true"
+              @dragleave.prevent="isDragging = false"
+              @drop.prevent="onDrop"
+            >
+              <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileInput" />
+              <template v-if="file">
+                <ImageIcon class="size-10 text-emerald-500 mb-3" />
+                <p class="text-sm font-semibold text-emerald-700">{{ file.name }}</p>
+                <p class="text-xs text-muted-foreground mt-1">Click to replace</p>
+              </template>
+              <template v-else>
+                <Upload class="size-10 text-muted-foreground mb-3" />
+                <p class="text-sm font-semibold">Drop document image here</p>
+                <p class="text-sm text-muted-foreground">or <span class="text-primary">click to browse</span></p>
+                <p class="text-xs text-muted-foreground mt-2">JPG, PNG, WEBP, TIFF supported</p>
+              </template>
+            </div>
+
+            <Button
+              class="w-full"
+              size="lg"
+              :disabled="!file || !hasTemplates"
+              @click="startProcessing"
+            >
+              <ScanText class="size-4 mr-2" />
+              Start OCR Processing
+            </Button>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="bundle">
+        <Card>
+          <CardContent class="pt-6">
+            <OcrBundleUpload @submit="handleBundleSubmit" />
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
 
     <!-- ── Processing stage ── -->
     <Card v-if="stage === 'processing'">
       <CardContent class="pt-6 space-y-8">
-        <!-- Step progress -->
         <div class="space-y-3">
           <div v-for="(step, i) in processingSteps" :key="i" class="flex items-center gap-3">
             <div :class="[
@@ -93,7 +108,6 @@
           </div>
         </div>
 
-        <!-- Current status -->
         <div class="flex items-center gap-3 rounded-lg bg-muted/40 p-4">
           <LoaderCircle class="size-5 animate-spin text-primary shrink-0" />
           <p class="text-sm text-muted-foreground">{{ processingMessage }}</p>
@@ -123,32 +137,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Upload, ImageIcon, ScanText, CheckIcon, LoaderCircle, XCircle, AlertTriangle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { matchingAndOcr, getApiBase } from '@/services/real-api'
-import { loadImageDimensions, transformApiResults } from '@/lib/api-bbox-transform'
-import * as ocrService from '@/services/ocr.service'
-import { useImageStore } from '@/composables/use-image-store'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import OcrBundleUpload from '@/components/ocr/ocr-bundle-upload.vue'
+import { templateService } from '@/services/template.service'
+import { ocrService } from '@/services/ocr.service'
 
 type Stage = 'upload' | 'processing' | 'error'
 
-const router     = useRouter()
-const imageStore = useImageStore()
+const router = useRouter()
 
-const stage             = ref<Stage>('upload')
-const file              = ref<File | null>(null)
-const isDragging        = ref(false)
-const fileInput         = ref<HTMLInputElement | null>(null)
-const processingStep    = ref(0)
+const mode            = ref<'single' | 'bundle'>('single')
+const stage           = ref<Stage>('upload')
+const file            = ref<File | null>(null)
+const isDragging      = ref(false)
+const fileInput       = ref<HTMLInputElement | null>(null)
+const processingStep  = ref(0)
 const processingMessage = ref('Analyzing document...')
 const errorMessage      = ref('')
 
-// Always enabled — no template dependency for real API
 const hasTemplates = ref(true)
 
 const processingSteps = [
@@ -156,6 +169,15 @@ const processingSteps = [
   { label: 'Template Matched',  desc: '' },
   { label: 'OCR Extraction',    desc: 'Reading text from fields...' },
 ]
+
+onMounted(async () => {
+  try {
+    const templates = await templateService.list()
+    hasTemplates.value = templates.some(t => t.activeVersionId)
+  } catch {
+    hasTemplates.value = false
+  }
+})
 
 function applyFile(f: File): void {
   file.value = f
@@ -180,6 +202,25 @@ function reset(): void {
   errorMessage.value = ''
 }
 
+async function handleBundleSubmit(payload: { bundleId: string; files: File[] }): Promise<void> {
+  stage.value = 'processing'
+  processingStep.value = 0
+  processingMessage.value = `Processing ${payload.files.length} files in bundle…`
+
+  try {
+    processingStep.value = 1
+    processingMessage.value = 'Running OCR on bundle files…'
+    processingStep.value = 2
+    await ocrService.extractBundle(payload.bundleId, payload.files)
+    processingStep.value = 3
+    toast.success('Bundle OCR processing complete')
+    router.push(`/ocr/bundle/${payload.bundleId}`)
+  } catch (e: any) {
+    errorMessage.value = e.response?.data?.detail ?? e.message ?? 'Bundle processing failed'
+    stage.value = 'error'
+  }
+}
+
 async function startProcessing(): Promise<void> {
   if (!file.value) return
   stage.value = 'processing'
@@ -187,38 +228,35 @@ async function startProcessing(): Promise<void> {
   processingMessage.value = 'Uploading and processing document…'
 
   try {
-    // Step 1: call real OCR API
-    const apiRes = await matchingAndOcr(file.value)
+    const match = await ocrService.preprocess(file.value)
+    if (!match) {
+      errorMessage.value = 'No matching template found. Please create a template first.'
+      stage.value = 'error'
+      return
+    }
     processingStep.value = 1
 
+    // Find active version for matched template
+    const detail = await templateService.get(match.templateId)
+    const activeVersion = detail.versions.find(v => v.status === 'active')
+    if (!activeVersion) {
+      errorMessage.value = 'Matched template has no active version.'
+      stage.value = 'error'
+      return
+    }
+
     const matchStep = processingSteps[1]
-    if (matchStep) matchStep.desc = `Matched: ${apiRes.form_id}`
-    processingMessage.value = `Matched: ${apiRes.form_id}. Extracting text…`
+    if (matchStep) matchStep.desc = `Matched: ${match.templateName} (${(match.confidence * 100).toFixed(0)}%)`
+    processingMessage.value = `Template matched: ${match.templateName}. Running OCR…`
     processingStep.value = 2
 
-    // Step 2: normalize bboxes using processed image dimensions
-    const processedImageUrl = `${getApiBase()}${apiRes.processed_image}`
-    const dims    = await loadImageDimensions(processedImageUrl)
-    const results = transformApiResults(apiRes.results, dims.w, dims.h)
+    const job = await ocrService.extract(activeVersion.id, file.value)
     processingStep.value = 3
-
-    // Save job — store original file locally + API processed image URL
-    const imageKey = `img:${crypto.randomUUID()}`
-    await imageStore.saveImage(imageKey, file.value)
-
-    const job = ocrService.createJob({
-      templateVersionId: apiRes.form_id,
-      templateName:      apiRes.form_id,
-      imageKey,
-      processedImageUrl
-    })
-    ocrService.updateJobStatus(job.id, 'done')
-    ocrService.updateJobResults(job.id, results)
 
     toast.success('OCR processing complete')
     router.push(`/ocr/${job.id}`)
-  } catch (err) {
-    errorMessage.value = err instanceof Error ? err.message : 'Unexpected error during processing.'
+  } catch (e: any) {
+    errorMessage.value = e.message ?? 'An unexpected error occurred during processing.'
     stage.value = 'error'
   }
 }

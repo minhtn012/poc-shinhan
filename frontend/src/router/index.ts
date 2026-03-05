@@ -37,6 +37,21 @@ const router = createRouter({
           component: () => import('@/views/version-view.vue')
         },
         {
+          path: 'bundles',
+          name: 'bundle-list',
+          component: () => import('@/views/bundle-list-view.vue')
+        },
+        {
+          path: 'bundles/create',
+          name: 'bundle-create',
+          component: () => import('@/views/bundle-create-view.vue')
+        },
+        {
+          path: 'bundles/:id',
+          name: 'bundle-detail',
+          component: () => import('@/views/bundle-detail-view.vue')
+        },
+        {
           path: 'ocr',
           name: 'ocr-list',
           component: () => import('@/views/ocr-list-view.vue')
@@ -45,6 +60,11 @@ const router = createRouter({
           path: 'ocr/new',
           name: 'ocr-upload',
           component: () => import('@/views/ocr-upload-view.vue')
+        },
+        {
+          path: 'ocr/bundle/:bundleId',
+          name: 'ocr-bundle-review',
+          component: () => import('@/views/ocr-bundle-review-view.vue')
         },
         {
           path: 'ocr/:id',
