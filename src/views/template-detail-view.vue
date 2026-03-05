@@ -159,8 +159,9 @@ const versions       = ref<TemplateVersion[]>([])
 const editDialogOpen = ref(false)
 const editForm       = ref({ name: '', description: '' })
 
-function load(): void {
+async function load(): Promise<void> {
   const id = route.params.id as string
+  await templateService.loadFromApi()
   template.value = templateService.getTemplate(id)
   versions.value = templateService.getVersionsByTemplate(id)
 }
@@ -182,26 +183,26 @@ function openEditDialog(): void {
   editDialogOpen.value = true
 }
 
-function saveEdit(): void {
+async function saveEdit(): Promise<void> {
   if (!template.value) return
-  templateService.updateTemplate(template.value.id, {
+  await templateService.updateTemplate(template.value.id, {
     name: editForm.value.name.trim(),
     description: editForm.value.description.trim() || undefined
   })
   editDialogOpen.value = false
   toast.success('Template updated')
-  load()
+  await load()
 }
 
-function handleActivate(versionId: string): void {
-  templateService.activateVersion(versionId)
+async function handleActivate(versionId: string): Promise<void> {
+  await templateService.activateVersion(versionId)
   toast.success('Version activated')
-  load()
+  await load()
 }
 
 function viewVersion(versionId: string): void {
   router.push(`/templates/${route.params.id}/versions/${versionId}`)
 }
 
-onMounted(load)
+onMounted(() => load())
 </script>

@@ -176,6 +176,7 @@ import FieldSidebar from '@/components/annotation/field-sidebar.vue'
 import type { TemplateField, NormalizedBBox } from '@/types/template.types'
 import * as templateService from '@/services/template.service'
 import { useImageStore } from '@/composables/use-image-store'
+import { fileToBase64, blobToBase64 } from '@/lib/api-bbox-transform'
 
 const steps = [
   { title: 'Upload Image',    desc: 'Name & image' },
@@ -207,6 +208,9 @@ const canProceedStep1 = computed(() =>
 )
 
 onMounted(async () => {
+  // Populate cache before using sync getters
+  await templateService.loadFromApi()
+
   const fromVersionId  = route.query.from as string | undefined
   const fromTemplateId = route.query.templateId as string | undefined
   if (!fromVersionId || !fromTemplateId) return
@@ -215,9 +219,9 @@ onMounted(async () => {
   const sourceTemplate = templateService.getTemplate(fromTemplateId)
   if (!sourceVersion || !sourceTemplate) return
 
-  templateName.value  = sourceTemplate.name
-  versionString.value = templateService.suggestNextVersion(fromTemplateId)
-  fields.value        = sourceVersion.fields.map(f => ({ ...f, id: crypto.randomUUID() }))
+  templateName.value   = sourceTemplate.name
+  versionString.value  = templateService.suggestNextVersion(fromTemplateId)
+  fields.value         = sourceVersion.fields.map(f => ({ ...f, id: crypto.randomUUID() }))
   sourceImageKey.value = sourceVersion.imageKey
 
   const url = await imageStore.getImageUrl(sourceVersion.imageKey)
@@ -253,24 +257,31 @@ function formatBBox(bbox: NormalizedBBox): string {
 async function saveTemplate(): Promise<void> {
   saving.value = true
   try {
+    // Determine layoutId: use existing if cloning or matching name, otherwise null (new)
     const fromTemplateId = route.query.templateId as string | undefined
-    let template = fromTemplateId
-      ? templateService.getTemplate(fromTemplateId)
-      : templateService.getTemplates().find(t => t.name === templateName.value)
-    if (!template) template = templateService.createTemplate(templateName.value)
+    let layoutId: string | null = fromTemplateId ?? null
+    if (!layoutId) {
+      const existing = templateService.getTemplates().find(t => t.name === templateName.value)
+      if (existing) layoutId = existing.id
+    }
 
+    // Save image locally + convert to base64 for API
     let imageKey: string
+    let imageBase64: string
     if (imageFile.value) {
-      imageKey = `img:${crypto.randomUUID()}`
+      imageKey    = `img:${crypto.randomUUID()}`
+      imageBase64 = await fileToBase64(imageFile.value)
       await imageStore.saveImage(imageKey, imageFile.value)
     } else if (sourceImageKey.value) {
       imageKey = sourceImageKey.value
+      const blob = await imageStore.getImage(sourceImageKey.value)
+      imageBase64 = blob ? await blobToBase64(blob) : ''
     } else {
       toast.error('No image provided')
       return
     }
 
-    templateService.createVersion(template.id, versionString.value, imageKey, fields.value)
+    await templateService.saveVersion(layoutId, templateName.value, versionString.value, imageKey, imageBase64, fields.value)
     toast.success('Template saved successfully')
     router.push('/templates')
   } catch {

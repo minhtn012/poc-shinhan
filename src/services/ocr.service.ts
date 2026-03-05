@@ -26,12 +26,14 @@ export function createJob(params: {
   templateVersionId: string
   templateName: string
   imageKey: string
+  processedImageUrl?: string
 }): OcrJob {
   const job: OcrJob = {
     id: crypto.randomUUID(),
     templateVersionId: params.templateVersionId,
     templateName: params.templateName,
     imageKey: params.imageKey,
+    processedImageUrl: params.processedImageUrl,
     status: 'pending',
     results: [],
     createdAt: new Date().toISOString()

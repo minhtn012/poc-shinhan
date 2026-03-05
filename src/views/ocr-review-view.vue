@@ -107,9 +107,13 @@ async function loadJob(): Promise<void> {
   if (!job.value) return
 
   imageLoading.value = true
-  const url = await imageStore.getImageUrl(job.value.imageKey)
-  imageUrl.value = url
-  objectUrl = url
+  if (job.value.processedImageUrl) {
+    imageUrl.value = job.value.processedImageUrl
+  } else {
+    const url = await imageStore.getImageUrl(job.value.imageKey)
+    imageUrl.value = url
+    objectUrl = url
+  }
   imageLoading.value = false
 }
 

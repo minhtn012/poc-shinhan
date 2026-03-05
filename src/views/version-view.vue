@@ -195,6 +195,7 @@ function formatBBox(b: NormalizedBBox): string {
 }
 
 async function load(): Promise<void> {
+  await templateService.loadFromApi()
   version.value = templateService.getVersion(versionId)
   const tmpl = templateService.getTemplate(templateId)
   templateName.value = tmpl?.name ?? ''
@@ -242,10 +243,9 @@ function updateFieldColor(idx: number, color: string): void {
   editableFields.value[idx].color = color
 }
 
-function saveFields(): void {
-  templateService.updateVersionFields(versionId, editableFields.value)
+async function saveFields(): Promise<void> {
+  await templateService.updateVersionFields(versionId, editableFields.value)
   originalFields.value = JSON.stringify(editableFields.value)
-  // Refresh version from storage
   version.value = templateService.getVersion(versionId)
   toast.success('Fields updated')
 }

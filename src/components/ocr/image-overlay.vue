@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import * as d3 from 'd3'
 import type { OcrFieldResult } from '@/types/ocr.types'
 
@@ -26,59 +26,90 @@ let currentTransform = d3.zoomIdentity
 let imgWidth = 0
 let imgHeight = 0
 let zoomBehavior: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null
+let bgImgEl: HTMLImageElement | null = null
+
+function cleanup(): void {
+  d3.select(containerRef.value).selectAll('svg').remove()
+  if (bgImgEl) { bgImgEl.remove(); bgImgEl = null }
+  svg = null
+  zoomBehavior = null
+  currentTransform = d3.zoomIdentity
+  imgWidth = 0
+  imgHeight = 0
+}
 
 async function initCanvas(imageUrl: string): Promise<void> {
   const container = containerRef.value
   if (!container) return
 
-  d3.select(container).selectAll('*').remove()
-  currentTransform = d3.zoomIdentity
+  cleanup()
 
+  // Use a real HTML <img> element — works for cross-origin display without CORS headers
+  bgImgEl = document.createElement('img')
+  bgImgEl.style.cssText = 'position:absolute;top:0;left:0;transform-origin:0 0;display:block;'
+
+  await new Promise<void>((resolve, reject) => {
+    bgImgEl!.onerror = () => reject(new Error(`Failed to load image: ${imageUrl}`))
+    bgImgEl!.onload  = () => {
+      imgWidth  = bgImgEl!.naturalWidth  || bgImgEl!.width
+      imgHeight = bgImgEl!.naturalHeight || bgImgEl!.height
+      resolve()
+    }
+    bgImgEl!.src = imageUrl
+  })
+
+  container.appendChild(bgImgEl)
+
+  // SVG layer sits on top: captures pointer events for zoom/pan, renders bbox overlays
   svg = d3.select(container)
     .append('svg')
     .attr('width', '100%')
     .attr('height', '100%')
+    .style('position', 'absolute')
+    .style('top', '0')
+    .style('left', '0')
 
-  return new Promise(resolve => {
-    const img = new Image()
-    img.onload = () => {
-      imgWidth = img.width
-      imgHeight = img.height
+  const content = svg.append('g').attr('class', 'content')
 
-      const content = svg!.append('g').attr('class', 'content')
-      content.append('image')
-        .attr('href', imageUrl)
-        .attr('width', img.width)
-        .attr('height', img.height)
-
-      zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.05, 10])
-        .wheelDelta((e: WheelEvent) => -e.deltaY * 0.001)
-        .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
-          currentTransform = event.transform
-          content.attr('transform', event.transform.toString())
-          renderOverlays()
-        })
-
-      svg!.call(zoomBehavior)
-      fitToContainer()
+  zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+    .scaleExtent([0.05, 10])
+    .wheelDelta((e: WheelEvent) => -e.deltaY * 0.001)
+    .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+      currentTransform = event.transform
+      content.attr('transform', event.transform.toString())
+      applyImgTransform(event.transform)
       renderOverlays()
-      resolve()
-    }
-    img.src = imageUrl
-  })
+    })
+
+  svg.call(zoomBehavior)
+  fitToContainer()
+  renderOverlays()
+}
+
+// Sync <img> CSS transform with D3 zoom transform
+function applyImgTransform(t: d3.ZoomTransform): void {
+  if (!bgImgEl) return
+  bgImgEl.style.transform = `translate(${t.x}px,${t.y}px) scale(${t.k})`
 }
 
 function fitToContainer(): void {
   const container = containerRef.value
   if (!container || !svg || !zoomBehavior || !imgWidth) return
   const rect = container.getBoundingClientRect()
-  const pad = 32
+
+  // Container may not be laid out yet — retry on next animation frame
+  if (!rect.width || !rect.height) {
+    requestAnimationFrame(fitToContainer)
+    return
+  }
+
+  const pad   = 32
   const scale = Math.min((rect.width - pad) / imgWidth, (rect.height - pad) / imgHeight, 1)
-  const tx = (rect.width - imgWidth * scale) / 2
-  const ty = (rect.height - imgHeight * scale) / 2
-  const t = d3.zoomIdentity.translate(tx, ty).scale(scale)
+  const tx    = (rect.width  - imgWidth  * scale) / 2
+  const ty    = (rect.height - imgHeight * scale) / 2
+  const t     = d3.zoomIdentity.translate(tx, ty).scale(scale)
   svg.call(zoomBehavior.transform, t)
+  // zoom event will call applyImgTransform(t)
 }
 
 function getContent(): d3.Selection<SVGGElement, unknown, null, undefined> | null {
@@ -94,22 +125,19 @@ function renderOverlays(): void {
   content.selectAll('.ocr-overlays').remove()
   if (!props.results.length) return
 
-  const t = currentTransform
+  const t     = currentTransform
   const group = content.append('g').attr('class', 'ocr-overlays')
 
   for (const result of props.results) {
-    const px = result.bbox.x * imgWidth
-    const py = result.bbox.y * imgHeight
-    const pw = result.bbox.w * imgWidth
-    const ph = result.bbox.h * imgHeight
+    const px       = result.bbox.x * imgWidth
+    const py       = result.bbox.y * imgHeight
+    const pw       = result.bbox.w * imgWidth
+    const ph       = result.bbox.h * imgHeight
     const isHovered = result.fieldId === props.hoveredFieldId
-    const color = props.fieldColors[result.fieldId] ?? '#2196F3'
+    const color    = props.fieldColors[result.fieldId] ?? '#2196F3'
 
     group.append('rect')
-      .attr('x', px)
-      .attr('y', py)
-      .attr('width', pw)
-      .attr('height', ph)
+      .attr('x', px).attr('y', py).attr('width', pw).attr('height', ph)
       .attr('fill', color)
       .attr('fill-opacity', isHovered ? 0.4 : 0.15)
       .attr('stroke', color)
@@ -118,12 +146,10 @@ function renderOverlays(): void {
       .style('transition', 'fill-opacity 0.15s')
       .on('mouseenter', () => emit('hover', result.fieldId))
       .on('mouseleave', () => emit('hover', null))
-      .on('click', () => emit('select', result.fieldId))
+      .on('click',      () => emit('select', result.fieldId))
 
-    // Field name label above rect
     group.append('text')
-      .attr('x', px + 4)
-      .attr('y', py - 4)
+      .attr('x', px + 4).attr('y', py - 4)
       .attr('fill', color)
       .attr('font-size', Math.max(10, 11 / t.k))
       .attr('font-weight', 'bold')
@@ -132,29 +158,38 @@ function renderOverlays(): void {
   }
 }
 
-// Re-render overlays when hover state or results change
+// onMounted guarantees containerRef.value is set (unlike immediate watch which fires before child DOM is ready)
+onMounted(() => {
+  if (props.imageUrl) {
+    initCanvas(props.imageUrl).catch(e => console.error('[ImageOverlay] failed to load:', e))
+  }
+})
+
+// Watch for imageUrl changes after mount (e.g. navigating between jobs)
+watch(
+  () => props.imageUrl,
+  async (url) => {
+    if (url) {
+      try {
+        await initCanvas(url)
+      } catch (e) {
+        console.error('[ImageOverlay] failed to load:', e)
+      }
+    }
+  }
+)
+
 watch(
   () => [props.hoveredFieldId, props.results] as const,
   () => renderOverlays()
 )
 
-// Reinit canvas when imageUrl changes
-// flush: 'post' ensures containerRef is available after DOM mount
-watch(
-  () => props.imageUrl,
-  async (url) => {
-    if (url) await initCanvas(url)
-  },
-  { immediate: true, flush: 'post' }
-)
-
-onUnmounted(() => {
-  zoomBehavior = null
-})
+onUnmounted(cleanup)
 </script>
 
 <style scoped>
 .image-overlay {
+  position: relative;
   width: 100%;
   height: 100%;
   background: #1a1a2e;

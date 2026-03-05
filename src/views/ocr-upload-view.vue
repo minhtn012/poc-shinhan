@@ -123,15 +123,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Upload, ImageIcon, ScanText, CheckIcon, LoaderCircle, XCircle, AlertTriangle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { mockPreprocess, mockOcr } from '@/services/mock-api'
-import * as templateService from '@/services/template.service'
+import { matchingAndOcr, getApiBase } from '@/services/real-api'
+import { loadImageDimensions, transformApiResults } from '@/lib/api-bbox-transform'
 import * as ocrService from '@/services/ocr.service'
 import { useImageStore } from '@/composables/use-image-store'
 
@@ -140,24 +140,22 @@ type Stage = 'upload' | 'processing' | 'error'
 const router     = useRouter()
 const imageStore = useImageStore()
 
-const stage           = ref<Stage>('upload')
-const file            = ref<File | null>(null)
-const isDragging      = ref(false)
-const fileInput       = ref<HTMLInputElement | null>(null)
-const processingStep  = ref(0)
+const stage             = ref<Stage>('upload')
+const file              = ref<File | null>(null)
+const isDragging        = ref(false)
+const fileInput         = ref<HTMLInputElement | null>(null)
+const processingStep    = ref(0)
 const processingMessage = ref('Analyzing document...')
-const errorMessage    = ref('')
-const hasTemplates    = ref(false)
+const errorMessage      = ref('')
+
+// Always enabled — no template dependency for real API
+const hasTemplates = ref(true)
 
 const processingSteps = [
-  { label: 'Preprocessing',    desc: 'Detecting template...' },
-  { label: 'Template Matching', desc: '' },
-  { label: 'OCR Extraction',   desc: 'Reading fields...' },
+  { label: 'Uploading',         desc: 'Sending image to OCR server...' },
+  { label: 'Template Matched',  desc: '' },
+  { label: 'OCR Extraction',    desc: 'Reading text from fields...' },
 ]
-
-onMounted(() => {
-  hasTemplates.value = templateService.getTemplates().some(t => t.activeVersionId)
-})
 
 function applyFile(f: File): void {
   file.value = f
@@ -186,44 +184,41 @@ async function startProcessing(): Promise<void> {
   if (!file.value) return
   stage.value = 'processing'
   processingStep.value = 0
-  processingMessage.value = 'Preprocessing document image…'
+  processingMessage.value = 'Uploading and processing document…'
 
   try {
-    const match = await mockPreprocess(file.value)
-    if (!match) {
-      errorMessage.value = 'No matching template found. Please create a template first.'
-      stage.value = 'error'
-      return
-    }
+    // Step 1: call real OCR API
+    const apiRes = await matchingAndOcr(file.value)
     processingStep.value = 1
 
-    const version = templateService.getActiveVersion(match.templateId)
-    if (!version) {
-      errorMessage.value = 'Matched template has no active version.'
-      stage.value = 'error'
-      return
-    }
-
-    const tpl = templateService.getTemplate(match.templateId)
     const matchStep = processingSteps[1]
-    if (matchStep) matchStep.desc = `Matched: ${tpl?.name ?? 'Unknown'} (${(match.confidence * 100).toFixed(0)}%)`
-    processingMessage.value = `Template matched: ${tpl?.name}. Running OCR…`
+    if (matchStep) matchStep.desc = `Matched: ${apiRes.form_id}`
+    processingMessage.value = `Matched: ${apiRes.form_id}. Extracting text…`
     processingStep.value = 2
 
-    const results = await mockOcr(file.value, version)
+    // Step 2: normalize bboxes using processed image dimensions
+    const processedImageUrl = `${getApiBase()}${apiRes.processed_image}`
+    const dims    = await loadImageDimensions(processedImageUrl)
+    const results = transformApiResults(apiRes.results, dims.w, dims.h)
     processingStep.value = 3
 
+    // Save job — store original file locally + API processed image URL
     const imageKey = `img:${crypto.randomUUID()}`
     await imageStore.saveImage(imageKey, file.value)
 
-    const job = ocrService.createJob({ templateVersionId: version.id, templateName: tpl?.name ?? 'Unknown', imageKey })
+    const job = ocrService.createJob({
+      templateVersionId: apiRes.form_id,
+      templateName:      apiRes.form_id,
+      imageKey,
+      processedImageUrl
+    })
     ocrService.updateJobStatus(job.id, 'done')
     ocrService.updateJobResults(job.id, results)
 
     toast.success('OCR processing complete')
     router.push(`/ocr/${job.id}`)
-  } catch {
-    errorMessage.value = 'An unexpected error occurred during processing.'
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Unexpected error during processing.'
     stage.value = 'error'
   }
 }
