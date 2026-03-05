@@ -17,6 +17,7 @@ export interface Template {
   name: string
   description?: string
   activeVersionId: string | null
+  versionCount?: number
   createdAt: string // ISO
 }
 
@@ -25,7 +26,7 @@ export interface TemplateVersion {
   templateId: string
   version: string // e.g. "v1", "v2"
   status: 'active' | 'inactive'
-  imageKey: string // localforage key: "img:{id}"
+  imageUrl: string // server URL: /api/images/{filename}
   fields: TemplateField[]
   createdAt: string
 }

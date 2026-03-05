@@ -27,4 +27,13 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Backend
+backend/data/
+backend/uploads/
+__pycache__/
+*.pyc
 plans/
+docs/
+.coverage
+repomix-output.xml

@@ -73,7 +73,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Files, ScanText, LogOut } from 'lucide-vue-next'
+import { Files, FolderOpen, ScanText, LogOut } from 'lucide-vue-next'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
   SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
@@ -85,6 +85,7 @@ import { useAuthStore } from '@/stores/auth.store'
 
 const navItems = [
   { to: '/templates', label: 'Templates', icon: Files },
+  { to: '/bundles',   label: 'Bundles',   icon: FolderOpen },
   { to: '/ocr',       label: 'OCR Jobs',  icon: ScanText },
 ]
 

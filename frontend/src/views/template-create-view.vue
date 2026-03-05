@@ -52,12 +52,11 @@
 
         <div class="space-y-1.5">
           <Label>Template Image <span class="text-destructive">*</span></Label>
-          <!-- Drop zone -->
           <div
             :class="[
               'relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center cursor-pointer transition-colors',
               isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/60 hover:bg-muted/40',
-              (imageFile || sourceImageKey) ? 'border-emerald-400 bg-emerald-50' : ''
+              (imageFile || sourceImageUrl) ? 'border-emerald-400 bg-emerald-50' : ''
             ]"
             @click="fileInput?.click()"
             @dragover.prevent="isDragging = true"
@@ -65,7 +64,7 @@
             @drop.prevent="onDrop"
           >
             <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileInput" />
-            <template v-if="imageFile || sourceImageKey">
+            <template v-if="imageFile || sourceImageUrl">
               <ImageIcon class="size-8 text-emerald-500 mb-2" />
               <p class="text-sm font-medium text-emerald-700">{{ imageFile?.name ?? 'Cloned image' }}</p>
               <p class="text-xs text-muted-foreground mt-1">Click to replace</p>
@@ -86,7 +85,6 @@
 
     <!-- ── Step 2: Annotate ── -->
     <div v-if="activeStep === 1" class="flex flex-col gap-0 rounded-lg border overflow-hidden" style="height: calc(100vh - 280px); min-height: 480px">
-      <!-- Canvas + sidebar grid -->
       <div class="flex flex-1 min-h-0">
         <div class="flex-1 min-w-0">
           <AnnotationCanvas
@@ -106,7 +104,6 @@
           />
         </div>
       </div>
-      <!-- Action bar -->
       <div class="flex items-center justify-between gap-3 px-4 py-3 border-t bg-muted/40 shrink-0">
         <Button variant="outline" size="sm" @click="activeStep = 0">← Back</Button>
         <p v-if="!fields.length" class="text-sm text-amber-600 font-medium">
@@ -174,9 +171,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AnnotationCanvas from '@/components/annotation/annotation-canvas.vue'
 import FieldSidebar from '@/components/annotation/field-sidebar.vue'
 import type { TemplateField, NormalizedBBox } from '@/types/template.types'
-import * as templateService from '@/services/template.service'
-import { useImageStore } from '@/composables/use-image-store'
-import { fileToBase64, blobToBase64 } from '@/lib/api-bbox-transform'
+import { templateService } from '@/services/template.service'
+
+const API_BASE = ''
 
 const steps = [
   { title: 'Upload Image',    desc: 'Name & image' },
@@ -184,16 +181,15 @@ const steps = [
   { title: 'Confirm & Save',  desc: 'Review and save' },
 ]
 
-const router     = useRouter()
-const route      = useRoute()
-const imageStore = useImageStore()
+const router = useRouter()
+const route  = useRoute()
 
 const activeStep      = ref(0)
 const templateName    = ref('')
 const versionString   = ref('v1')
 const imageFile       = ref<File | null>(null)
 const imageUrl        = ref<string | null>(null)
-const sourceImageKey  = ref<string | null>(null)
+const sourceImageUrl  = ref<string | null>(null)
 const fields          = ref<TemplateField[]>([])
 const selectedFieldId = ref<string | null>(null)
 const saving          = ref(false)
@@ -204,28 +200,31 @@ const isCloning = computed(() => !!route.query.from)
 const canProceedStep1 = computed(() =>
   templateName.value.trim() &&
   versionString.value.trim() &&
-  (imageFile.value !== null || sourceImageKey.value !== null)
+  (imageFile.value !== null || sourceImageUrl.value !== null)
 )
 
 onMounted(async () => {
-  // Populate cache before using sync getters
-  await templateService.loadFromApi()
-
   const fromVersionId  = route.query.from as string | undefined
   const fromTemplateId = route.query.templateId as string | undefined
   if (!fromVersionId || !fromTemplateId) return
 
-  const sourceVersion  = templateService.getVersion(fromVersionId)
-  const sourceTemplate = templateService.getTemplate(fromTemplateId)
-  if (!sourceVersion || !sourceTemplate) return
+  try {
+    const detail = await templateService.get(fromTemplateId)
+    templateName.value = detail.name
 
-  templateName.value   = sourceTemplate.name
-  versionString.value  = templateService.suggestNextVersion(fromTemplateId)
-  fields.value         = sourceVersion.fields.map(f => ({ ...f, id: crypto.randomUUID() }))
-  sourceImageKey.value = sourceVersion.imageKey
+    const sourceVersion = detail.versions.find(v => v.id === fromVersionId)
+    if (!sourceVersion) return
 
-  const url = await imageStore.getImageUrl(sourceVersion.imageKey)
-  if (url) imageUrl.value = url
+    versionString.value = await templateService.suggestVersion(fromTemplateId)
+    fields.value = sourceVersion.fields.map(f => ({ ...f, id: crypto.randomUUID() }))
+
+    if (sourceVersion.imageUrl) {
+      sourceImageUrl.value = sourceVersion.imageUrl
+      imageUrl.value = API_BASE + sourceVersion.imageUrl
+    }
+  } catch {
+    // Ignore clone errors
+  }
 })
 
 function applyFile(file: File): void {
@@ -257,35 +256,31 @@ function formatBBox(bbox: NormalizedBBox): string {
 async function saveTemplate(): Promise<void> {
   saving.value = true
   try {
-    // Determine layoutId: use existing if cloning or matching name, otherwise null (new)
     const fromTemplateId = route.query.templateId as string | undefined
-    let layoutId: string | null = fromTemplateId ?? null
-    if (!layoutId) {
-      const existing = templateService.getTemplates().find(t => t.name === templateName.value)
-      if (existing) layoutId = existing.id
-    }
 
-    // Save image locally + convert to base64 for API
-    let imageKey: string
-    let imageBase64: string
-    if (imageFile.value) {
-      imageKey    = `img:${crypto.randomUUID()}`
-      imageBase64 = await fileToBase64(imageFile.value)
-      await imageStore.saveImage(imageKey, imageFile.value)
-    } else if (sourceImageKey.value) {
-      imageKey = sourceImageKey.value
-      const blob = await imageStore.getImage(sourceImageKey.value)
-      imageBase64 = blob ? await blobToBase64(blob) : ''
-    } else {
+    // For cloning: need the image file. If user didn't pick a new file, fetch the source image
+    let file = imageFile.value
+    if (!file && sourceImageUrl.value) {
+      const resp = await fetch(API_BASE + sourceImageUrl.value)
+      const blob = await resp.blob()
+      file = new File([blob], 'cloned-image.png', { type: blob.type })
+    }
+    if (!file) {
       toast.error('No image provided')
       return
     }
 
-    await templateService.saveVersion(layoutId, templateName.value, versionString.value, imageKey, imageBase64, fields.value)
+    let templateId = fromTemplateId
+    if (!templateId) {
+      const created = await templateService.create(templateName.value)
+      templateId = created.id
+    }
+
+    await templateService.createVersion(templateId, versionString.value, fields.value, file)
     toast.success('Template saved successfully')
     router.push('/templates')
-  } catch {
-    toast.error('Failed to save template')
+  } catch (e: any) {
+    toast.error(e.message ?? 'Failed to save template')
   } finally {
     saving.value = false
   }

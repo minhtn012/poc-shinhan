@@ -57,8 +57,8 @@
           <Loader2 class="size-8 animate-spin text-primary/40" />
         </div>
         <AnnotationCanvas
-          v-else-if="imageUrl"
-          :image-url="imageUrl"
+          v-else-if="fullImageUrl"
+          :image-url="fullImageUrl"
           :model-value="editableFields"
           readonly
         />
@@ -69,7 +69,6 @@
 
       <!-- Right: editable fields panel -->
       <div class="flex-[45] flex flex-col min-h-0 bg-white">
-        <!-- Panel header -->
         <div class="flex items-center justify-between px-5 py-3.5 border-b border-black/[0.04] shrink-0">
           <div>
             <h2 class="text-sm font-bold text-foreground">Fields</h2>
@@ -80,7 +79,6 @@
           </Button>
         </div>
 
-        <!-- Scrollable field list -->
         <div class="flex-1 overflow-y-auto">
           <Table>
             <TableHeader>
@@ -146,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Copy, Loader2, Save, Check, X } from 'lucide-vue-next'
@@ -161,28 +159,25 @@ import {
 } from '@/components/ui/breadcrumb'
 import VersionBadge from '@/components/common/version-badge.vue'
 import AnnotationCanvas from '@/components/annotation/annotation-canvas.vue'
-import * as templateService from '@/services/template.service'
-import { useImageStore } from '@/composables/use-image-store'
-import type { TemplateField, NormalizedBBox } from '@/types/template.types'
+import { templateService } from '@/services/template.service'
+import type { TemplateField, TemplateVersion, NormalizedBBox } from '@/types/template.types'
 
-const route      = useRoute()
-const router     = useRouter()
-const imageStore = useImageStore()
+const API_BASE = ''
+
+const route  = useRoute()
+const router = useRouter()
 
 const templateId   = route.params.id as string
 const versionId    = route.params.vid as string
-const version      = ref<ReturnType<typeof templateService.getVersion>>()
+const version      = ref<TemplateVersion | null>(null)
 const templateName = ref('')
-const imageUrl     = ref<string | null>(null)
+const fullImageUrl = ref<string | null>(null)
 const imageLoading = ref(true)
 const notFound     = ref(false)
-let objectUrl: string | null = null
 
-// Editable fields (cloned from version)
 const editableFields = ref<TemplateField[]>([])
-const originalFields = ref<string>('')  // JSON snapshot for dirty check
+const originalFields = ref<string>('')
 
-// Inline edit state
 const editingIdx  = ref<number | null>(null)
 const editingName = ref('')
 
@@ -195,42 +190,41 @@ function formatBBox(b: NormalizedBBox): string {
 }
 
 async function load(): Promise<void> {
-  await templateService.loadFromApi()
-  version.value = templateService.getVersion(versionId)
-  const tmpl = templateService.getTemplate(templateId)
-  templateName.value = tmpl?.name ?? ''
+  try {
+    const detail = await templateService.get(templateId)
+    templateName.value = detail.name
 
-  if (!version.value) {
-    notFound.value = true
-    imageLoading.value = false
-    return
-  }
-
-  // Clone fields for editing
-  editableFields.value = version.value.fields.map(f => ({ ...f, bbox: { ...f.bbox } }))
-  originalFields.value = JSON.stringify(editableFields.value)
-
-  // Load image
-  if (version.value.imageKey) {
-    const blob = await imageStore.getImage(version.value.imageKey)
-    if (blob) {
-      objectUrl = URL.createObjectURL(blob)
-      imageUrl.value = objectUrl
+    const ver = detail.versions.find(v => v.id === versionId)
+    if (!ver) {
+      notFound.value = true
+      imageLoading.value = false
+      return
     }
+
+    version.value = ver
+    editableFields.value = ver.fields.map(f => ({ ...f, bbox: { ...f.bbox } }))
+    originalFields.value = JSON.stringify(editableFields.value)
+
+    if (ver.imageUrl) {
+      fullImageUrl.value = API_BASE + ver.imageUrl
+    }
+  } catch {
+    notFound.value = true
+  } finally {
+    imageLoading.value = false
   }
-  imageLoading.value = false
 }
 
 function startEdit(idx: number): void {
   editingIdx.value = idx
-  editingName.value = editableFields.value[idx].name
+  editingName.value = editableFields.value[idx]!.name
 }
 
 function commitEdit(): void {
   if (editingIdx.value === null) return
   const trimmed = editingName.value.trim()
   if (trimmed) {
-    editableFields.value[editingIdx.value].name = trimmed
+    editableFields.value[editingIdx.value]!.name = trimmed
   }
   editingIdx.value = null
 }
@@ -240,14 +234,17 @@ function cancelEdit(): void {
 }
 
 function updateFieldColor(idx: number, color: string): void {
-  editableFields.value[idx].color = color
+  editableFields.value[idx]!.color = color
 }
 
 async function saveFields(): Promise<void> {
-  await templateService.updateVersionFields(versionId, editableFields.value)
-  originalFields.value = JSON.stringify(editableFields.value)
-  version.value = templateService.getVersion(versionId)
-  toast.success('Fields updated')
+  try {
+    await templateService.updateFields(versionId, editableFields.value)
+    originalFields.value = JSON.stringify(editableFields.value)
+    toast.success('Fields updated')
+  } catch (e: any) {
+    toast.error(e.message ?? 'Failed to update fields')
+  }
 }
 
 function cloneToNew(): void {
@@ -255,5 +252,4 @@ function cloneToNew(): void {
 }
 
 onMounted(load)
-onUnmounted(() => { if (objectUrl) URL.revokeObjectURL(objectUrl) })
 </script>

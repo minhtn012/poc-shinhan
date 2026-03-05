@@ -101,17 +101,19 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import * as ocrService from '@/services/ocr.service'
+import { ocrService } from '@/services/ocr.service'
 import type { OcrJob, OcrJobStatus } from '@/types/ocr.types'
 
 const router  = useRouter()
 const loading = ref(false)
 const jobs    = ref<OcrJob[]>([])
 
-function loadJobs(): void {
+async function loadJobs(): Promise<void> {
   loading.value = true
   try {
-    jobs.value = ocrService.getJobs().reverse()
+    jobs.value = await ocrService.list()
+  } catch (e: any) {
+    toast.error(e.message ?? 'Failed to load jobs')
   } finally {
     loading.value = false
   }
@@ -132,11 +134,15 @@ function statusVariant(status: OcrJobStatus): BadgeVariant {
   return map[status]
 }
 
-function handleDelete(id: string): void {
+async function handleDelete(id: string): Promise<void> {
   if (!window.confirm('Delete this OCR job?')) return
-  ocrService.deleteJob(id)
-  toast.success('Job deleted')
-  loadJobs()
+  try {
+    await ocrService.delete(id)
+    toast.success('Job deleted')
+    await loadJobs()
+  } catch (e: any) {
+    toast.error(e.message ?? 'Failed to delete job')
+  }
 }
 
 onMounted(loadJobs)

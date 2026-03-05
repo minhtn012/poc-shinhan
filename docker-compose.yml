@@ -1,0 +1,28 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/.env:/app/.env
+    environment:
+      - VITE_API_BASE_URL=http://backend:4001
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "4001:4001"
+    volumes:
+      - ./backend:/app
+      - backend-data:/app/data
+      - backend-uploads:/app/uploads
+
+volumes:
+  backend-data:
+  backend-uploads:

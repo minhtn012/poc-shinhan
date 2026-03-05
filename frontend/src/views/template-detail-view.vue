@@ -10,13 +10,19 @@
         </BreadcrumbItem>
         <BreadcrumbSeparator />
         <BreadcrumbItem>
-          <BreadcrumbPage>{{ template?.name ?? 'Loading…' }}</BreadcrumbPage>
+          <BreadcrumbPage>{{ detail?.name ?? 'Loading…' }}</BreadcrumbPage>
         </BreadcrumbItem>
       </BreadcrumbList>
     </Breadcrumb>
 
+    <!-- Loading -->
+    <div v-if="loading" class="space-y-2">
+      <Skeleton class="h-10 w-64" />
+      <Skeleton class="h-48 w-full" />
+    </div>
+
     <!-- Not found -->
-    <div v-if="!template" class="flex flex-col items-center justify-center py-20 text-center">
+    <div v-else-if="!detail" class="flex flex-col items-center justify-center py-20 text-center">
       <p class="text-muted-foreground mb-4">Template not found</p>
       <Button variant="outline" @click="router.push('/templates')">← Back to Templates</Button>
     </div>
@@ -25,17 +31,15 @@
       <!-- Header -->
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-xl font-bold text-foreground">{{ template.name }}</h1>
-          <p v-if="template.description" class="text-sm text-muted-foreground mt-0.5">
-            {{ template.description }}
+          <h1 class="text-xl font-bold text-foreground">{{ detail.name }}</h1>
+          <p v-if="detail.description" class="text-sm text-muted-foreground mt-0.5">
+            {{ detail.description }}
           </p>
         </div>
         <div class="flex items-center gap-2 shrink-0">
-          <!-- Primary CTA: create new version based on active/latest -->
-          <Button size="sm" :disabled="!versions.length" @click="updateVersion">
+          <Button size="sm" :disabled="!detail.versions.length" @click="updateVersion">
             Update Version
           </Button>
-          <!-- Secondary: edit template metadata -->
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="icon" class="size-8">
@@ -57,7 +61,7 @@
       <!-- Versions table -->
       <div class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Versions</h2>
-        <Card v-if="versions.length" class="table-card">
+        <Card v-if="detail.versions.length" class="table-card">
           <Table>
             <TableHeader>
               <TableRow>
@@ -70,7 +74,7 @@
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="ver in versions" :key="ver.id">
+              <TableRow v-for="ver in detail.versions" :key="ver.id">
                 <TableCell class="font-mono text-sm font-medium">{{ ver.version }}</TableCell>
                 <TableCell><VersionBadge :status="ver.status" /></TableCell>
                 <TableCell class="text-center text-sm">{{ ver.fields.length }}</TableCell>
@@ -136,6 +140,7 @@ import { Pencil, MoreHorizontal, Eye, CheckCircle2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -148,61 +153,83 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import VersionBadge from '@/components/common/version-badge.vue'
-import * as templateService from '@/services/template.service'
-import type { Template, TemplateVersion } from '@/types/template.types'
+import { templateService } from '@/services/template.service'
+import type { TemplateVersion } from '@/types/template.types'
 
-const route   = useRoute()
-const router  = useRouter()
+interface TemplateDetail {
+  id: string
+  name: string
+  description?: string | null
+  activeVersionId: string | null
+  versions: TemplateVersion[]
+  createdAt: string
+}
 
-const template       = ref<Template | undefined>()
-const versions       = ref<TemplateVersion[]>([])
+const route  = useRoute()
+const router = useRouter()
+
+const loading        = ref(true)
+const detail         = ref<TemplateDetail | null>(null)
 const editDialogOpen = ref(false)
 const editForm       = ref({ name: '', description: '' })
 
 async function load(): Promise<void> {
-  const id = route.params.id as string
-  await templateService.loadFromApi()
-  template.value = templateService.getTemplate(id)
-  versions.value = templateService.getVersionsByTemplate(id)
+  loading.value = true
+  try {
+    const id = route.params.id as string
+    detail.value = await templateService.get(id)
+  } catch {
+    detail.value = null
+  } finally {
+    loading.value = false
+  }
 }
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-/** Navigate to annotation canvas to create a new version based on active (or latest) version */
 function updateVersion(): void {
-  const baseId = template.value?.activeVersionId ?? versions.value[0]?.id
+  if (!detail.value) return
+  const baseId = detail.value.activeVersionId ?? detail.value.versions[0]?.id
   if (!baseId) return
   router.push(`/templates/create?from=${baseId}&templateId=${route.params.id}`)
 }
 
 function openEditDialog(): void {
-  if (!template.value) return
-  editForm.value = { name: template.value.name, description: template.value.description ?? '' }
+  if (!detail.value) return
+  editForm.value = { name: detail.value.name, description: detail.value.description ?? '' }
   editDialogOpen.value = true
 }
 
 async function saveEdit(): Promise<void> {
-  if (!template.value) return
-  await templateService.updateTemplate(template.value.id, {
-    name: editForm.value.name.trim(),
-    description: editForm.value.description.trim() || undefined
-  })
-  editDialogOpen.value = false
-  toast.success('Template updated')
-  await load()
+  if (!detail.value) return
+  try {
+    await templateService.update(detail.value.id, {
+      name: editForm.value.name.trim(),
+      description: editForm.value.description.trim() || undefined
+    })
+    editDialogOpen.value = false
+    toast.success('Template updated')
+    await load()
+  } catch (e: any) {
+    toast.error(e.message ?? 'Failed to update')
+  }
 }
 
 async function handleActivate(versionId: string): Promise<void> {
-  await templateService.activateVersion(versionId)
-  toast.success('Version activated')
-  await load()
+  try {
+    await templateService.activateVersion(versionId)
+    toast.success('Version activated')
+    await load()
+  } catch (e: any) {
+    toast.error(e.message ?? 'Failed to activate')
+  }
 }
 
 function viewVersion(versionId: string): void {
   router.push(`/templates/${route.params.id}/versions/${versionId}`)
 }
 
-onMounted(() => load())
+onMounted(load)
 </script>
